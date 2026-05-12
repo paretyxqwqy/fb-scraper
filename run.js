@@ -29,8 +29,7 @@ const TG_BOT_TOKEN = env.TG_BOT_TOKEN || process.env.TG_BOT_TOKEN;
 const TG_CHANNEL_ID = env.TG_CHANNEL_ID || process.env.TG_CHANNEL_ID;
 
 // DC
-const DC_BOT_TOKEN = env.DC_BOT_TOKEN || process.env.DC_BOT_TOKEN;
-const DC_CHANNEL_ID = env.DC_CHANNEL_ID || process.env.DC_CHANNEL_ID;
+const DC_WEBHOOK = env.DC_WEBHOOK || process.env.DC_WEBHOOK;
 
 // ===== LLM 分析 =====
 async function analyzePost(post) {
@@ -118,19 +117,18 @@ async function sendTelegram(text) {
   });
 }
 
-// ===== 發送 Discord =====
+// ===== 發送 Discord Webhook =====
 async function sendDiscord(text) {
-  if (!DC_BOT_TOKEN || !DC_CHANNEL_ID) return;
-  const url = `https://discord.com/api/v10/channels/${DC_CHANNEL_ID}/messages`;
+  if (!DC_WEBHOOK) return;
   const body = JSON.stringify({ content: text });
   return new Promise((resolve) => {
+    const u = new URL(DC_WEBHOOK);
     const req = https.request({
-      hostname: 'discord.com', path: '/api/v10/channels/' + DC_CHANNEL_ID + '/messages',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bot ${DC_BOT_TOKEN}` },
+      hostname: u.hostname, path: u.pathname + u.search, method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
     }, (res) => {
       let d = ''; res.on('data', c => d += c);
-      res.on('end', () => { try { const j = JSON.parse(d); resolve(j.id != null); } catch { resolve(false); } });
+      res.on('end', () => { resolve(res.statusCode === 200 || res.statusCode === 204); });
     });
     req.on('error', e => resolve(false));
     req.write(body); req.end();
