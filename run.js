@@ -170,7 +170,9 @@ async function main() {
   }
 
   // 分析每一篇，有股票就推播
-  for (const post of newPosts) {
+  const foundPosts = [];
+
+  for (const post of newPosts.reverse()) {
     const stocks = await analyzePost(post);
     const stockList = Array.isArray(stocks) && stocks.length > 0 && stocks[0] !== 'NOCODE'
       ? stocks.join('、')
@@ -180,6 +182,10 @@ async function main() {
       console.log(`  無股票，略過`);
       continue;
     }
+
+    post.stockList = stockList;
+    post.stocks = stocks;
+    foundPosts.push(post);
 
     const msg = [
       `📣 <b>FB 股票情報</b>`,
