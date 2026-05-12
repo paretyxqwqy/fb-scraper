@@ -78,8 +78,9 @@ ${post.text}${post.ocrText ? '\n圖片文字：' + post.ocrText : ''}`;
         try {
           const json = JSON.parse(data);
           const content = json?.choices?.[0]?.message?.content?.trim() || '[]';
-          // 去掉 code block
-          const cleaned = content.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+          // 去掉 code block 和 <thinking> tags
+          let cleaned = content.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+          cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/g, '');
           resolve(JSON.parse(cleaned));
         } catch (e) {
           console.error('[LLM] parse error:', e.message, data.slice(0, 100));
@@ -136,15 +137,23 @@ async function sendDiscord(text) {
 }
 
 // ===== 主程式 =====
+
+function extractStockLine(text, stocks) {
+  const lines = text.split(/[\n\r]+/);
+  for (const line of lines) {
+    for (const code of stocks) {
+      if (line.includes(code)) return line.trim().slice(0, 100);
+    }
+  }
+  return text.slice(0, 80);
+}
 async function main() {
   if (!APAFY_TOKEN) { console.error('需要 APAFY_TOKEN'); process.exit(1); }
 
   const PAGE_URL = process.argv[2] || 'https://www.facebook.com/i8stock';
-  const KEYWORD = '撈股中';
 
   console.log(`=== FB Scraper + LLM 分析 ===`);
   console.log(`粉專：${PAGE_URL}`);
-  console.log(`關鍵字：${KEYWORD}`);
   console.log('');
 
   // 抓取
@@ -153,23 +162,24 @@ async function main() {
   console.log(`抓到 ${posts.length} 篇，新 ${newPosts.length} 篇`);
 
   // 過濾含關鍵字
-  const keywordPosts = newPosts.filter(p =>
-    p.text.includes(KEYWORD) || p.ocrText?.includes(KEYWORD)
-  );
-  console.log(`含「${KEYWORD}」：${keywordPosts.length} 篇`);
+  console.log(`分析 ${newPosts.length} 篇新貼文...`);
 
-  if (keywordPosts.length === 0) {
-    console.log('沒有符合條件的貼文');
-    markSeen(PAGE_URL, newPosts.map(p => p.id));
+  if (newPosts.length === 0) {
+    console.log('沒有新貼文');
     return;
   }
 
-  // 分析 + 推播
-  for (const post of keywordPosts) {
+  // 分析每一篇，有股票就推播
+  for (const post of newPosts) {
     const stocks = await analyzePost(post);
-    const stockList = Array.isArray(stocks) && stocks.length > 0
+    const stockList = Array.isArray(stocks) && stocks.length > 0 && stocks[0] !== 'NOCODE'
       ? stocks.join('、')
-      : '（未識別出股票）';
+      : null;
+
+    if (!stockList) {
+      console.log(`  無股票，略過`);
+      continue;
+    }
 
     const msg = [
       `📣 <b>FB 股票情報</b>`,
@@ -177,7 +187,7 @@ async function main() {
       `👤 <a href="${post.url}">原文連結</a>`,
       `⏰ ${post.timestamp}`,
       ``,
-      `📝 ${post.text.slice(0, 200)}${post.text.length > 200 ? '...' : ''}`,
+      `📝 ${extractStockLine(post.text, stocks)},`,
       ``,
       `🔍 ${stockList}`,
       ``,
